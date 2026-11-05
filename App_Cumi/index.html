@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Sortir Cumi VIPAC</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        h2 { color: #2c3e50; }
+        
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            background-color: #ebf5fb;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            justify-content: center;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+            width: 100%;
+        }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        
+        .btn-camera { background-color: #27ae60; }
+        .btn-camera:hover { background-color: #2ecc71; }
+        
+        .btn-capture { background-color: #e67e22; margin-top: 10px;}
+        .btn-capture:hover { background-color: #d35400; }
+
+        #videoElement {
+            width: 100%;
+            border-radius: 8px;
+            display: none;
+            background-color: #000;
+        }
+
+        #preview {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .result-card {
+            margin-top: 25px;
+            padding: 20px;
+            background-color: #e8f8f5;
+            border-left: 5px solid #1abc9c;
+            border-radius: 6px;
+            display: none;
+            text-align: left;
+        }
+        .loading { display: none; margin-top: 15px; color: #7f8c8d; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🦑 Sortir Cumi AI</h2>
+    <p>Pilih foto dari galeri atau ambil gambar langsung menggunakan kamera untuk deteksi varian.</p>
+
+    <div class="btn-group">
+        <button id="btnOpenFile" onclick="document.getElementById('imageInput').click()">📁 Buka File</button>
+        <button id="btnOpenCamera" class="btn-camera" onclick="startCamera()">📷 Buka Kamera</button>
+    </div>
+
+    <div class="upload-area" id="dropArea">
+        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+        
+        <video id="videoElement" autoplay playsinline></video>
+        <button id="btnCapture" class="btn-capture" style="display: none;" onclick="takePhoto()">📸 Jepret Foto</button>
+        
+        <canvas id="canvasElement" style="display: none;"></canvas>
+
+        <img id="preview" src="" alt="Preview Gambar">
+    </div>
+
+    <button id="predictBtn" onclick="predictImage()" disabled>🔍 Analisis Gambar</button>
+    
+    <div id="loadingText" class="loading">AI sedang memproses gambar...</div>
+
+    <div id="resultCard" class="result-card">
+        <h3 style="margin-top: 0;">Hasil Analisis:</h3>
+        <p><strong>Varian Prediksi:</strong> <span id="resVarian" style="font-size: 1.2em; color: #1abc9c;">-</span></p>
+        <p><strong>Tingkat Keyakinan:</strong> <span id="resConfidence">-</span>%</p>
+        <hr style="border-top: 1px solid #ccc; margin: 15px 0;">
+        <p style="font-size: 0.9em; margin-bottom: 5px;">Detail Probabilitas:</p>
+        <pre id="resDetail" style="font-size: 0.85em; background: #fff; padding: 10px; border-radius: 4px; overflow-x: auto;"></pre>
+    </div>
+</div>
+
+<script>
+    const imageInput = document.getElementById('imageInput');
+    const preview = document.getElementById('preview');
+    const predictBtn = document.getElementById('predictBtn');
+    const loadingText = document.getElementById('loadingText');
+    const resultCard = document.getElementById('resultCard');
+    
+    const videoElement = document.getElementById('videoElement');
+    const canvasElement = document.getElementById('canvasElement');
+    const btnCapture = document.getElementById('btnCapture');
+
+    let currentStream = null;
+    let finalImageBlob = null; // Variabel ini menyimpan file yang akan dikirim ke API
+
+    // 1. EVENT: Saat File Di-upload Manual
+    imageInput.addEventListener('change', function() {
+        const file = this.files[0];
+        if (file) {
+            stopCamera(); // Matikan kamera jika sedang menyala
+            finalImageBlob = file; 
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                showPreview(e.target.result);
+            }
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // 2. FUNGSI: Menyalakan Kamera
+    async function startCamera() {
+        try {
+            // Meminta akses kamera (prioritaskan kamera belakang jika ada di HP)
+            const constraints = { video: { facingMode: 'environment' } };
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            videoElement.srcObject = currentStream;
+            videoElement.style.display = 'block';
+            btnCapture.style.display = 'block';
+            
+            // Sembunyikan preview gambar lama jika ada
+            preview.style.display = 'none';
+            resultCard.style.display = 'none';
+            predictBtn.disabled = true;
+            
+        } catch (err) {
+            alert("Gagal mengakses kamera: " + err.message + "\nPastikan browser memiliki izin kamera.");
+        }
+    }
+
+    // 3. FUNGSI: Mengambil Foto dari Video
+    function takePhoto() {
+        if (!currentStream) return;
+
+        // Samakan ukuran canvas dengan resolusi video
+        canvasElement.width = videoElement.videoWidth;
+        canvasElement.height = videoElement.videoHeight;
+        
+        // Gambar frame saat ini ke dalam canvas
+        const context = canvasElement.getContext('2d');
+        context.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+        
+        // Ubah canvas menjadi file Blob (gambar JPEG)
+        canvasElement.toBlob(function(blob) {
+            finalImageBlob = blob;
+            // Tampilkan hasil jepretan
+            const imageUrl = URL.createObjectURL(blob);
+            showPreview(imageUrl);
+            
+            stopCamera(); // Matikan kamera setelah memotret
+        }, 'image/jpeg', 0.95);
+    }
+
+    // 4. FUNGSI: Mematikan Kamera
+    function stopCamera() {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+            currentStream = null;
+        }
+        videoElement.style.display = 'none';
+        btnCapture.style.display = 'none';
+    }
+
+    // 5. FUNGSI: Menampilkan Gambar ke Layar
+    function showPreview(src) {
+        preview.src = src;
+        preview.style.display = 'block';
+        predictBtn.disabled = false;
+        resultCard.style.display = 'none';
+    }
+
+    // 6. FUNGSI: Mengirim Gambar ke API FastAPI
+    // 6. FUNGSI: Mengirim Gambar ke API FastAPI
+    async function predictImage() {
+        // Cek apakah ada gambar yang sudah diupload atau difoto
+        if (!finalImageBlob) {
+            alert("Silakan pilih gambar atau ambil foto terlebih dahulu!");
+            return;
+        }
+
+        // Siapkan antarmuka UI untuk pemuatan (loading)
+        predictBtn.disabled = true;
+        loadingText.style.display = 'block';
+        resultCard.style.display = 'none';
+
+        // Kemas file ke dalam FormData
+        const formData = new FormData();
+        // Berikan nama file default (kamera.jpg) agar backend FastAPI mendeteksinya sebagai format gambar yang valid
+        formData.append('file', finalImageBlob, 'kamera.jpg'); 
+
+        try {
+            // Kirim gambar ke Backend FastAPI Lokal
+            //const response = await fetch('http://localhost:8000/predict/', {
+            const response = await fetch('/predict/', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) throw new Error("Terjadi kesalahan pada server");
+
+            const data = await response.json();
+
+            // Tangkap elemen HTML untuk menampilkan hasil
+            const resVarian = document.getElementById('resVarian');
+            
+            // Tampilkan hasil prediksi
+            resVarian.innerText = data.prediction;
+            
+            // Logika UI: Ubah warna teks jika objek tidak dikenali (di bawah threshold)
+            if (data.prediction.includes("Unidentified")) {
+                resVarian.style.color = "#e74c3c"; // Warna merah untuk peringatan
+            } else {
+                resVarian.style.color = "#1abc9c"; // Warna hijau tosca untuk varian yang valid
+            }
+
+            // Tampilkan persentase keyakinan dan detail probabilitas
+            document.getElementById('resConfidence').innerText = data.confidence_percent;
+            document.getElementById('resDetail').innerText = JSON.stringify(data.detail_probabilities, null, 2);
+            
+            // Munculkan kartu hasil ke layar
+            resultCard.style.display = 'block';
+            
+        } catch (error) {
+            alert("Gagal menghubungi server AI. Pastikan terminal Uvicorn FastAPI sedang menyala.");
+            console.error(error);
+        } finally {
+            // Matikan status loading, kembalikan tombol prediksi
+            predictBtn.disabled = false;
+            loadingText.style.display = 'none';
+        }
+    }
+</script>
+
+</body>
+</html>
