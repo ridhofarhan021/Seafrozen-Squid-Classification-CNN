@@ -1,0 +1,16 @@
+# Cache prediksi dan salinan bobot dari notebook analisis
+notebooks/results/cache/
+notebooks/results/*.h5
+
+# File sementara Jupyter dan Python
+**/.ipynb_checkpoints/
+__pycache__/
+venv/
+
+# Rahasia (authtoken ngrok, variabel lingkungan)
+.env
+ngrok.yml
+
+# Dataset lengkap dan bobot semua run tuning (tidak dirilis)
+V4 - Splitted Dataset/
+models_tuning/
